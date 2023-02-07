@@ -1,0 +1,116 @@
+---
+- hosts: rancher-server
+  become: true
+
+# Atualizando o S.O
+
+  tasks:
+  - name: Atualização do sistema
+    apt:
+      upgrade: dist
+      update_cache: yes
+  - name: Pause
+    pause:
+      seconds: 600
+
+# Instalando as dependências      
+
+  - name: Instalação de pacotes
+    apt:
+      name:
+        - gnupg2
+        - ca-certificates
+        - curl
+        - apt-transport-https
+        - iptables
+      state: latest
+  - name: Pause
+    pause:
+      seconds: 60
+
+# Instalando o Helm     
+      
+  - name: Instalação do Helm
+    shell: |
+      curl https://baltocdn.com/helm/signing.asc | gpg --dearmor | sudo tee /usr/share/keyrings/helm.gpg > /dev/null
+      sudo apt-get install apt-transport-https --yes
+      echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/helm.gpg] https://baltocdn.com/helm/stable/debian/ all main" | sudo tee /etc/apt/sources.list.d/helm-stable-debian.list
+      sudo apt-get update
+      sudo apt-get install helm
+  - name: Pause
+    pause:
+      seconds: 60
+
+# Instalando o kubectl
+
+  - name: Instalação do Kubectl
+    shell: |
+      sudo apt update
+      sudo apt install ca-certificates curl apt-transport-https -y
+      sudo curl -fsSLo /usr/share/keyrings/kubernetes-archive-keyring.gpg https://packages.cloud.google.com/apt/doc/apt-key.gpg
+      echo "deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-xenial main" | sudo tee /etc/apt/sources.list.d/kubernetes.list
+      sudo apt update
+      sudo apt install kubectl -y
+  - name: Pause
+    pause:
+      seconds: 60
+
+# Instalando o RKE2 e configurando      
+    
+  - name: Instalação do RKE2
+    shell: |
+      curl -sfL https://get.rke2.io | sh -
+      
+  - name: Habilitar o serviço RKE2
+    shell: sudo systemctl enable rke2-server.service
+
+  - name: Iniciar o serviço RKE2
+    shell: sudo systemctl start rke2-server.service
+  - name: Pause
+    pause:
+      seconds: 60
+
+  - name: Criar o diretório ~/.kube
+    shell: mkdir ~/.kube
+
+  - name: Copiar o arquivo de configuração para ~/.kube/config
+    shell: sudo cp /etc/rancher/rke2/rke2.yaml ~/.kube/config
+
+  - name: Atribuir permissões corretas ao arquivo de configuração
+    shell: |
+      sudo chown $USER:$USER ~/.kube/config
+      chmod 400 ~/.kube/config
+
+# Instalando o Cert-Manager
+
+  - name: Instalação do Cert-Manager
+    shell: |
+      helm repo add jetstack https://charts.jetstack.io
+      helm repo update
+      helm upgrade --install cert-manager jetstack/cert-manager  --namespace cert-manager --create-namespace --set installCRDs=true
+  - name: Pause
+    pause:
+      seconds: 60
+
+# Criando o namespace e instalando o Rancher
+
+  - name: Criando o namespace
+    shell: kubectl create ns cluster-rancher
+  - name: Pause
+    pause:
+      seconds: 60  
+    
+  - name: Adicionando o repositório do Rancher
+    shell: helm repo add rancher-latest https://releases.rancher.com/server-charts/latest
+
+  - name: Atualizando o repositório
+    shell: helm repo update
+        
+  - name: Instalando o Rancher
+    shell: helm install rancher rancher-latest/rancher --namespace cluster-rancher --set hostname=rancher-learn.online --set bootstrapPassword=Zion@2023 --set ingress.tls.source=letsEncrypt --set letsEncrypt.email=pauloricassio@gmail.com --set letsEncrypt.ingress.class=nginx    
+  - name: Pause
+    pause:
+      seconds: 60  
+
+  - name: Checando o status do deploy do Rancher no cluster
+    shell: kubectl -n cluster-rancher rollout status deploy/rancher    
